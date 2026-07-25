@@ -20,6 +20,8 @@ export interface SeasonalTopic {
   getActiveMonths: (year: number) => number[];
   /** 해당 연도의 구체적인 날짜/기간 라벨 (UI 표시용) */
   getDateLabel: (year: number) => string;
+  /** 정확히 특정 하루로 콕 집을 수 있는 소재만 ISO 날짜(YYYY-MM-DD) 배열 반환. 기간/범위 소재는 생략(undefined). */
+  getExactDates?: (year: number) => string[];
 }
 
 // --- 음력 명절 날짜 테이블 (양력 환산, 확인된 연도만 등록) -------------------
@@ -83,6 +85,10 @@ export const SEASONAL_TOPICS: SeasonalTopic[] = [
       const dateStr = SEOLLAL_DATES[year];
       return dateStr ? `${formatKoreanDate(dateStr)} (음력 1월 1일)` : "날짜 확인 필요 (데이터 미등록 연도)";
     },
+    getExactDates: (year) => {
+      const dateStr = SEOLLAL_DATES[year];
+      return dateStr ? [dateStr] : [];
+    },
   },
   {
     id: "daeboreum",
@@ -104,6 +110,10 @@ export const SEASONAL_TOPICS: SeasonalTopic[] = [
         ? `${formatKoreanDate(addDays(seollal, 14))} (음력 1월 15일)`
         : "날짜 확인 필요 (데이터 미등록 연도)";
     },
+    getExactDates: (year) => {
+      const seollal = SEOLLAL_DATES[year];
+      return seollal ? [addDays(seollal, 14)] : [];
+    },
   },
   {
     id: "chuseok",
@@ -123,6 +133,10 @@ export const SEASONAL_TOPICS: SeasonalTopic[] = [
       const dateStr = CHUSEOK_DATES[year];
       return dateStr ? `${formatKoreanDate(dateStr)} (음력 8월 15일)` : "날짜 확인 필요 (데이터 미등록 연도)";
     },
+    getExactDates: (year) => {
+      const dateStr = CHUSEOK_DATES[year];
+      return dateStr ? [dateStr] : [];
+    },
   },
   {
     id: "seongnyeon",
@@ -139,6 +153,7 @@ export const SEASONAL_TOPICS: SeasonalTopic[] = [
       const d = thirdMondayOfMay(year);
       return `${formatKoreanDate(d.toISOString().slice(0, 10))} (5월 셋째 월요일)`;
     },
+    getExactDates: (year) => [thirdMondayOfMay(year).toISOString().slice(0, 10)],
   },
   {
     id: "children-day",
@@ -152,6 +167,7 @@ export const SEASONAL_TOPICS: SeasonalTopic[] = [
     ],
     getActiveMonths: () => [5],
     getDateLabel: (year) => `${year}년 5월 5일 (고정일)`,
+    getExactDates: (year) => [`${year}-05-05`],
   },
   {
     id: "parents-day",
@@ -165,6 +181,7 @@ export const SEASONAL_TOPICS: SeasonalTopic[] = [
     ],
     getActiveMonths: () => [5],
     getDateLabel: (year) => `${year}년 5월 8일 (고정일)`,
+    getExactDates: (year) => [`${year}-05-08`],
   },
   {
     id: "hangeul-day",
@@ -178,6 +195,7 @@ export const SEASONAL_TOPICS: SeasonalTopic[] = [
     ],
     getActiveMonths: () => [10],
     getDateLabel: (year) => `${year}년 10월 9일 (고정일)`,
+    getExactDates: (year) => [`${year}-10-09`],
   },
   {
     id: "spring-wedding",
@@ -301,4 +319,32 @@ export function getThisMonthTopics(now: Date = new Date()): SeasonalTopicWithDat
 export function getNextMonthTopics(now: Date = new Date()): SeasonalTopicWithDate[] {
   const { year, month } = shiftMonth(now, 1);
   return topicsActiveInMonth(year, month);
+}
+
+export interface SeasonalMarker {
+  date: string;
+  label: string;
+}
+
+/**
+ * [startDate, endDate] (YYYY-MM-DD, inclusive) 구간에 정확한 날짜가 존재하는
+ * 시즌 소재만 골라 차트 마커용으로 반환. 범위/기간형 소재(웨딩시즌 등)는 제외.
+ */
+export function getTopicMarkersInRange(startDate: string, endDate: string): SeasonalMarker[] {
+  const startYear = Number(startDate.slice(0, 4));
+  const endYear = Number(endDate.slice(0, 4));
+  const years = startYear === endYear ? [startYear] : [startYear, endYear];
+
+  const markers: SeasonalMarker[] = [];
+  for (const topic of SEASONAL_TOPICS) {
+    if (!topic.getExactDates) continue;
+    for (const year of years) {
+      for (const date of topic.getExactDates(year)) {
+        if (date >= startDate && date <= endDate) {
+          markers.push({ date, label: topic.name });
+        }
+      }
+    }
+  }
+  return markers.sort((a, b) => a.date.localeCompare(b.date));
 }

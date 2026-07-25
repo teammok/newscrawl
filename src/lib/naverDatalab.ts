@@ -3,7 +3,24 @@
 
 const NAVER_DATALAB_URL = "https://openapi.naver.com/v1/datalab/search";
 
-export const TREND_KEYWORDS = ["한복", "전통혼례", "궁중의상", "웨딩한복", "한복대여"] as const;
+// 네이버 데이터랩 API는 요청 1건당 keywordGroups를 최대 5개까지만 허용합니다.
+// 아래 목록에 키워드를 추가/삭제/교체하면 되고, 5개를 넘으면 자동으로 여러 번 나눠 요청합니다.
+export const TREND_KEYWORDS = [
+  "한복",
+  "전통혼례",
+  "궁중의상",
+  "웨딩한복",
+  "한복대여",
+  "혼주한복",
+  "한복모델선발대회",
+  "한복패션쇼",
+] as const;
+
+const MAX_KEYWORD_GROUPS_PER_REQUEST = 5;
+
+export type TrendTimeUnit = "date" | "week";
+export const ALLOWED_TREND_DAYS = [7, 30, 90] as const;
+export type TrendDays = (typeof ALLOWED_TREND_DAYS)[number];
 
 export interface NaverTrendPoint {
   period: string;
@@ -18,10 +35,25 @@ export interface NaverTrendSeriesResult {
 export type NaverTrendResult =
   | { status: "not_configured" }
   | { status: "error"; message: string }
-  | { status: "ok"; series: NaverTrendSeriesResult[]; fetchedAt: string; startDate: string; endDate: string };
+  | {
+      status: "ok";
+      series: NaverTrendSeriesResult[];
+      fetchedAt: string;
+      startDate: string;
+      endDate: string;
+      timeUnit: TrendTimeUnit;
+    };
 
 function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+function chunk<T>(items: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
 }
 
 interface NaverDatalabResponse {
@@ -32,7 +64,50 @@ interface NaverDatalabResponse {
   }[];
 }
 
-export async function fetchNaverSearchTrend(days = 90): Promise<NaverTrendResult> {
+async function fetchKeywordGroupBatch(
+  keywords: readonly string[],
+  startDate: string,
+  endDate: string,
+  timeUnit: TrendTimeUnit,
+  clientId: string,
+  clientSecret: string
+): Promise<NaverTrendSeriesResult[]> {
+  const requestBody = {
+    startDate,
+    endDate,
+    timeUnit,
+    keywordGroups: keywords.map((keyword) => ({
+      groupName: keyword,
+      keywords: [keyword],
+    })),
+  };
+
+  const res = await fetch(NAVER_DATALAB_URL, {
+    method: "POST",
+    headers: {
+      "X-Naver-Client-Id": clientId,
+      "X-Naver-Client-Secret": clientSecret,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(requestBody),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `네이버 데이터랩 API 오류 (${res.status} ${res.statusText})${text ? `: ${text.slice(0, 200)}` : ""}`
+    );
+  }
+
+  const json = (await res.json()) as NaverDatalabResponse;
+  return json.results.map((r) => ({ keyword: r.title, data: r.data }));
+}
+
+export async function fetchNaverSearchTrend(
+  days: TrendDays = 30,
+  timeUnit: TrendTimeUnit = "date"
+): Promise<NaverTrendResult> {
   const clientId = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
 
@@ -43,51 +118,30 @@ export async function fetchNaverSearchTrend(days = 90): Promise<NaverTrendResult
   const endDate = new Date();
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
+  const startDateStr = formatDate(startDate);
+  const endDateStr = formatDate(endDate);
 
-  const requestBody = {
-    startDate: formatDate(startDate),
-    endDate: formatDate(endDate),
-    timeUnit: "date",
-    keywordGroups: TREND_KEYWORDS.map((keyword) => ({
-      groupName: keyword,
-      keywords: [keyword],
-    })),
-  };
+  const batches = chunk(TREND_KEYWORDS, MAX_KEYWORD_GROUPS_PER_REQUEST);
 
-  let res: Response;
   try {
-    res = await fetch(NAVER_DATALAB_URL, {
-      method: "POST",
-      headers: {
-        "X-Naver-Client-Id": clientId,
-        "X-Naver-Client-Secret": clientSecret,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-      cache: "no-store",
-    });
+    const batchResults = await Promise.all(
+      batches.map((batch) =>
+        fetchKeywordGroupBatch(batch, startDateStr, endDateStr, timeUnit, clientId, clientSecret)
+      )
+    );
+
+    return {
+      status: "ok",
+      series: batchResults.flat(),
+      fetchedAt: new Date().toISOString(),
+      startDate: startDateStr,
+      endDate: endDateStr,
+      timeUnit,
+    };
   } catch (err) {
     return {
       status: "error",
-      message: err instanceof Error ? `네트워크 오류: ${err.message}` : "네트워크 오류로 데이터를 가져오지 못했습니다.",
+      message: err instanceof Error ? err.message : "알 수 없는 오류로 데이터를 가져오지 못했습니다.",
     };
   }
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    return {
-      status: "error",
-      message: `네이버 데이터랩 API 오류 (${res.status} ${res.statusText})${text ? `: ${text.slice(0, 200)}` : ""}`,
-    };
-  }
-
-  const json = (await res.json()) as NaverDatalabResponse;
-
-  return {
-    status: "ok",
-    series: json.results.map((r) => ({ keyword: r.title, data: r.data })),
-    fetchedAt: new Date().toISOString(),
-    startDate: requestBody.startDate,
-    endDate: requestBody.endDate,
-  };
 }
