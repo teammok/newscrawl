@@ -12,7 +12,15 @@ import iconv from "iconv-lite";
 import type { Element as CheerioElement } from "domhandler";
 
 // 여기 배열만 수정하면 검색 키워드를 쉽게 추가/삭제/교체할 수 있습니다.
-export const NEWS_KEYWORDS = ["한복", "전통의상", "궁중문화"] as const;
+export const NEWS_KEYWORDS = [
+  "한복",
+  "전통의상",
+  "궁중문화",
+  "한복축제",
+  "외국인 한복",
+  "한복 지원사업",
+  "한복 트렌드",
+] as const;
 
 const SEARCH_URL = "https://search.naver.com/search.naver";
 const MAX_ARTICLES_PER_KEYWORD = 6;
