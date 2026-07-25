@@ -1,4 +1,5 @@
 import SeasonalTopicsSection from "@/components/SeasonalTopicsSection";
+import NaverTrendsSection from "@/components/NaverTrendsSection";
 
 export default function Home() {
   return (
@@ -15,6 +16,7 @@ export default function Home() {
 
         <div className="flex flex-col gap-8">
           <SeasonalTopicsSection />
+          <NaverTrendsSection />
         </div>
       </main>
     </div>
