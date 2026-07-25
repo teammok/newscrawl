@@ -9,6 +9,7 @@
 
 import * as cheerio from "cheerio";
 import iconv from "iconv-lite";
+import type { Element as CheerioElement } from "domhandler";
 
 // 여기 배열만 수정하면 검색 키워드를 쉽게 추가/삭제/교체할 수 있습니다.
 export const NEWS_KEYWORDS = ["한복", "전통의상", "궁중문화"] as const;
@@ -65,26 +66,39 @@ async function decodeHtml(res: Response): Promise<string> {
   }
 }
 
+// sds-comps-* 컴포넌트 안에는 스크린리더 전용 "새 창 열림" 라벨이 텍스트 노드로
+// 섞여 들어가 있어서, 순수 .text()로는 지저분한 문자열이 나온다.
+// 이 라벨 노드만 정확히 걸러내고 나머지 텍스트를 합친다.
+function cleanText($: cheerio.CheerioAPI, el: CheerioElement | undefined): string {
+  if (!el) return "";
+  const clone = $(el).clone();
+  clone.find("*").each((_, child) => {
+    if ($(child).text().trim() === "새 창 열림") $(child).remove();
+  });
+  return clone.text().trim();
+}
+
+// 네이버 뉴스 검색 결과는 클래스명이 대부분 빌드마다 바뀌는 해시(예: "QNE_dylF8F8s0nSa")라
+// 믿을 수 없고, 대신 안정적인 것은 디자인 시스템 컴포넌트를 나타내는 "sds-comps-*" 클래스뿐이다.
+// 기사 제목(headline1)을 기준점으로 잡고, 그 조상 카드(제목+본문 요약+프로필이 함께 있는
+// 지점) 안에서 언론사/시간/요약을 함께 찾는다.
 function parseArticles(html: string): NewsArticle[] {
   const $ = cheerio.load(html);
   const articles: NewsArticle[] = [];
   const seenUrls = new Set<string>();
 
-  $(".news_area").each((_, el) => {
-    const root = $(el);
-    const titleEl = root.find("a.news_tit").first();
-    const title = titleEl.text().trim();
-    const url = titleEl.attr("href")?.trim();
+  $(".sds-comps-text-type-headline1").each((_, el) => {
+    const titleEl = $(el);
+    const url = titleEl.closest("a").attr("href")?.trim();
+    const title = cleanText($, el);
     if (!title || !url || seenUrls.has(url)) return;
 
-    const press = root.find(".info_group a.press").first().text().trim();
+    // headline1과 profile(언론사/시간)이 같은 부모를 공유하는 지점까지 올라간다.
+    const card = titleEl.parent().parent().parent().parent();
 
-    // .info_group 안의 span.info 중 언론사/부가정보가 아니라 "N시간 전" 같은
-    // 시간 표기가 보통 맨 마지막에 옴 -> 마지막 span.info를 시간 라벨로 사용
-    const infoSpans = root.find(".info_group span.info");
-    const publishedLabel = infoSpans.length > 0 ? infoSpans.last().text().trim() : "";
-
-    const description = root.find(".news_dsc .dsc_wrap, .dsc_wrap").first().text().trim();
+    const press = cleanText($, card.find(".sds-comps-profile-info-title-text").first().get(0));
+    const publishedLabel = cleanText($, card.find(".sds-comps-profile-info-subtext").first().get(0));
+    const description = cleanText($, card.find(".sds-comps-text-type-body1").first().get(0));
 
     seenUrls.add(url);
     articles.push({ title, url, press, publishedLabel, description });
