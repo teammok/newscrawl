@@ -35,7 +35,8 @@ function NotConfiguredState() {
       <p className="mb-2">
         네이버 개발자센터(developers.naver.com)에서 애플리케이션을 등록하고 &quot;데이터랩(검색어트렌드)&quot; API
         사용 설정을 한 뒤, 발급받은 Client ID / Secret을 프로젝트 루트의{" "}
-        <code className="rounded bg-amber-100 px-1 py-0.5 dark:bg-amber-900/60">.env</code> 파일에 입력해주세요.
+        <code className="rounded bg-amber-100 px-1 py-0.5 dark:bg-amber-900/60">.env.local</code>(또는{" "}
+        <code className="rounded bg-amber-100 px-1 py-0.5 dark:bg-amber-900/60">.env</code>) 파일에 입력해주세요.
       </p>
       <pre className="overflow-x-auto rounded bg-amber-100 p-2 text-xs text-amber-900 dark:bg-amber-900/50 dark:text-amber-100">
 {`NAVER_CLIENT_ID=발급받은_client_id

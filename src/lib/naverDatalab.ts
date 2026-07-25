@@ -82,19 +82,44 @@ async function fetchKeywordGroupBatch(
     })),
   };
 
-  const res = await fetch(NAVER_DATALAB_URL, {
-    method: "POST",
-    headers: {
-      "X-Naver-Client-Id": clientId,
-      "X-Naver-Client-Secret": clientSecret,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(requestBody),
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(NAVER_DATALAB_URL, {
+      method: "POST",
+      headers: {
+        "X-Naver-Client-Id": clientId,
+        "X-Naver-Client-Secret": clientSecret,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+      cache: "no-store",
+    });
+  } catch (err) {
+    console.error(
+      "[naverDatalab] fetch 자체가 실패했습니다 (네트워크/DNS 등). keywords:",
+      keywords,
+      "requestBody:",
+      requestBody,
+      "원본 에러:",
+      err
+    );
+    throw new Error(err instanceof Error ? `네트워크 오류: ${err.message}` : "네트워크 오류로 데이터를 가져오지 못했습니다.");
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    console.error(
+      `[naverDatalab] API 오류 응답 - status: ${res.status} ${res.statusText}`,
+      "\n  keywords:", keywords,
+      "\n  requestBody:", requestBody,
+      "\n  응답 본문:", text
+    );
+    if (res.status === 401) {
+      console.error(
+        "[naverDatalab] 401 Unauthorized → NAVER_CLIENT_ID/NAVER_CLIENT_SECRET 값이 잘못되었거나, " +
+          "네이버 개발자센터에서 해당 애플리케이션에 '데이터랩(검색어트렌드)' API 사용 설정이 안 되어 있을 수 있습니다."
+      );
+    }
     throw new Error(
       `네이버 데이터랩 API 오류 (${res.status} ${res.statusText})${text ? `: ${text.slice(0, 200)}` : ""}`
     );
@@ -139,6 +164,7 @@ export async function fetchNaverSearchTrend(
       timeUnit,
     };
   } catch (err) {
+    console.error("[naverDatalab] fetchNaverSearchTrend 실패:", err);
     return {
       status: "error",
       message: err instanceof Error ? err.message : "알 수 없는 오류로 데이터를 가져오지 못했습니다.",
