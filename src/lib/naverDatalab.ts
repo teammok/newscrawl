@@ -84,6 +84,9 @@ async function fetchKeywordGroupBatch(
 
   let res: Response;
   try {
+    // POST 요청 바디(키워드 배치)가 매번 달라서 Next.js 캐시 태그를 걸면
+    // 같은 URL의 다른 배치 응답이 뒤섞일 위험이 있어, 항상 캐시 없이 라이브로 호출합니다.
+    // (검색 트렌드는 어차피 매 요청마다 최신값이어야 의미가 있어 캐싱 이점도 크지 않습니다.)
     res = await fetch(NAVER_DATALAB_URL, {
       method: "POST",
       headers: {

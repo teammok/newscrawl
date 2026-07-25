@@ -291,7 +291,7 @@ function OkState({
   );
 }
 
-export default function NaverTrendsSection() {
+export default function NaverTrendsSection({ refreshSignal = 0 }: { refreshSignal?: number }) {
   const [days, setDays] = useState<TrendDays>(30);
   const [timeUnitPref, setTimeUnitPref] = useState<TrendTimeUnit>("date");
   const [result, setResult] = useState<NaverTrendResult | null>(null);
@@ -325,7 +325,7 @@ export default function NaverTrendsSection() {
     return () => {
       ignore = true;
     };
-  }, [days, timeUnit, reloadToken]);
+  }, [days, timeUnit, reloadToken, refreshSignal]);
 
   const series: TrendSeries[] =
     result?.status === "ok"

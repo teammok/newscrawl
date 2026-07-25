@@ -1,6 +1,4 @@
-import SeasonalTopicsSection from "@/components/SeasonalTopicsSection";
-import NaverTrendsSection from "@/components/NaverTrendsSection";
-import NewsSection from "@/components/NewsSection";
+import Dashboard from "@/components/Dashboard";
 
 function AttributionBadge() {
   return (
@@ -25,11 +23,7 @@ export default function Home() {
           </p>
         </header>
 
-        <div className="flex flex-col gap-8">
-          <SeasonalTopicsSection />
-          <NaverTrendsSection />
-          <NewsSection />
-        </div>
+        <Dashboard />
       </main>
     </div>
   );

@@ -13,6 +13,12 @@ const MAX_ARTICLES_PER_KEYWORD = 6;
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
+// 방문할 때마다 네이버에 크롤링 요청을 보내지 않도록 Next.js Data Cache에 태그를 걸어
+// 6시간마다 자동 갱신하고, /api/refresh(수동 버튼)나 Vercel Cron이 이 태그를
+// revalidateTag로 무효화하면 다음 요청에서 즉시 새로 크롤링합니다.
+export const NEWS_CACHE_TAG = "naver-news";
+const REVALIDATE_SECONDS = 60 * 60 * 6;
+
 export interface NewsArticle {
   title: string;
   url: string;
@@ -68,7 +74,7 @@ async function fetchKeywordNews(keyword: string): Promise<NewsKeywordGroup> {
   try {
     res = await fetch(url, {
       headers: { "User-Agent": USER_AGENT },
-      cache: "no-store",
+      next: { revalidate: REVALIDATE_SECONDS, tags: [NEWS_CACHE_TAG] },
     });
   } catch (err) {
     console.error(`[naverNews] "${keyword}" 요청 자체가 실패했습니다 (네트워크/DNS 등):`, err);

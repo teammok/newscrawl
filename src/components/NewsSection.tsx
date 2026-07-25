@@ -64,7 +64,7 @@ function KeywordGroupCard({ group }: { group: NewsKeywordGroup }) {
   );
 }
 
-export default function NewsSection() {
+export default function NewsSection({ refreshSignal = 0 }: { refreshSignal?: number }) {
   const [result, setResult] = useState<NaverNewsResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [reloadToken, setReloadToken] = useState(0);
@@ -90,7 +90,7 @@ export default function NewsSection() {
     return () => {
       ignore = true;
     };
-  }, [reloadToken]);
+  }, [reloadToken, refreshSignal]);
 
   const allFailed = result != null && result.groups.length > 0 && result.groups.every((g) => g.status === "error");
 
