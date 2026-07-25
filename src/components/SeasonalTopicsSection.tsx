@@ -1,4 +1,5 @@
 import {
+  getLastMonthTopics,
   getNextMonthTopics,
   getThisMonthTopics,
   type SeasonalTopicWithDate,
@@ -7,8 +8,10 @@ import {
 const CATEGORY_STYLE: Record<string, string> = {
   명절: "bg-rose-100 text-rose-700",
   기념일: "bg-amber-100 text-amber-700",
-  웨딩시즌: "bg-pink-100 text-pink-700",
+  웨딩시즌: "bg-fuchsia-100 text-fuchsia-700",
   문화축제: "bg-indigo-100 text-indigo-700",
+  전통문화: "bg-teal-100 text-teal-700",
+  시즌트렌드: "bg-sky-100 text-sky-700",
 };
 
 function TopicCard({ topic }: { topic: SeasonalTopicWithDate }) {
@@ -42,13 +45,15 @@ function TopicGroup({
   title,
   topics,
   emptyMessage,
+  muted = false,
 }: {
   title: string;
   topics: SeasonalTopicWithDate[];
   emptyMessage: string;
+  muted?: boolean;
 }) {
   return (
-    <div>
+    <div className={muted ? "opacity-80" : undefined}>
       <h3 className="mb-3 text-sm font-semibold text-neutral-500">{title}</h3>
       {topics.length === 0 ? (
         <p className="rounded-lg border border-dashed border-neutral-300 p-4 text-sm text-neutral-400">
@@ -66,11 +71,14 @@ function TopicGroup({
 }
 
 export default function SeasonalTopicsSection({ now = new Date() }: { now?: Date }) {
+  const lastMonth = getLastMonthTopics(now);
   const thisMonth = getThisMonthTopics(now);
   const nextMonth = getNextMonthTopics(now);
-  const monthLabel = `${now.getFullYear()}년 ${now.getMonth() + 1}월`;
-  const nextDate = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 1));
-  const nextMonthLabel = `${nextDate.getUTCFullYear()}년 ${nextDate.getUTCMonth() + 1}월`;
+
+  const monthLabel = (offset: number) => {
+    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth() + offset, 1));
+    return `${d.getUTCFullYear()}년 ${d.getUTCMonth() + 1}월`;
+  };
 
   return (
     <section className="rounded-2xl border border-neutral-200 bg-neutral-50 p-6">
@@ -80,12 +88,18 @@ export default function SeasonalTopicsSection({ now = new Date() }: { now?: Date
       </div>
       <div className="space-y-6">
         <TopicGroup
-          title={`이번 달 소재 (${monthLabel})`}
+          title={`지난달 소재 (${monthLabel(-1)}) · 비교용`}
+          topics={lastMonth}
+          emptyMessage="지난달에는 해당하는 고정 시즌 소재가 없었습니다."
+          muted
+        />
+        <TopicGroup
+          title={`이번 달 소재 (${monthLabel(0)})`}
           topics={thisMonth}
           emptyMessage="이번 달에는 해당하는 고정 시즌 소재가 없습니다."
         />
         <TopicGroup
-          title={`다음 달 예정 소재 (${nextMonthLabel})`}
+          title={`다음 달 예정 소재 (${monthLabel(1)})`}
           topics={nextMonth}
           emptyMessage="다음 달에는 해당하는 고정 시즌 소재가 없습니다."
         />
