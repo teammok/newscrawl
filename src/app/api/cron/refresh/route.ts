@@ -1,6 +1,9 @@
-import { revalidateTag } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
-import { NEWS_CACHE_TAG } from "@/lib/naverNews";
+import { crawlNaverNews } from "@/lib/naverNews";
+import { saveNewsData } from "@/lib/storage";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 // Vercel Cron이 매일 아침 호출하는 엔드포인트 (vercel.json 참고).
 // CRON_SECRET 환경변수를 설정해두면 Vercel이 자동으로
@@ -16,7 +19,15 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // { expire: 0 }: 아침 크론이 돌면 바로 새 크롤링 결과를 받도록 즉시 만료시킵니다.
-  revalidateTag(NEWS_CACHE_TAG, { expire: 0 });
-  return NextResponse.json({ ok: true, revalidatedAt: new Date().toISOString() });
+  try {
+    const data = await crawlNaverNews();
+    await saveNewsData(data);
+    return NextResponse.json({ ok: true, fetchedAt: data.fetchedAt });
+  } catch (err) {
+    console.error("[api/cron/refresh] 뉴스 크롤링/저장 실패:", err);
+    return NextResponse.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
+  }
 }

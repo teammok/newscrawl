@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# 크롤링 데이터 (로컬 개발 시 Vercel Blob 대신 쓰는 폴백 저장소)
+/data/naver-news.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { NaverNewsResult, NewsKeywordGroup } from "@/lib/naverNews";
+
+type NewsApiResponse = { status: "empty" } | { status: "ok"; data: NaverNewsResult };
 
 function SkeletonState() {
   return (
@@ -10,6 +12,14 @@ function SkeletonState() {
         <div key={i} className="h-16 rounded-lg bg-neutral-100 dark:bg-neutral-800" />
       ))}
     </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <p className="rounded-lg border border-dashed border-neutral-300 p-4 text-sm text-neutral-400 dark:border-neutral-700 dark:text-neutral-500">
+      아직 갱신된 뉴스 데이터가 없습니다. &quot;새로고침&quot;을 눌러 처음 크롤링을 실행해주세요.
+    </p>
   );
 }
 
@@ -65,23 +75,28 @@ function KeywordGroupCard({ group }: { group: NewsKeywordGroup }) {
 }
 
 export default function NewsSection({ refreshSignal = 0 }: { refreshSignal?: number }) {
-  const [result, setResult] = useState<NaverNewsResult | null>(null);
+  const [result, setResult] = useState<NewsApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [reloadToken, setReloadToken] = useState(0);
+  const [crawling, setCrawling] = useState(false);
+
+  const loadStored = useCallback(async (): Promise<void> => {
+    const res = await fetch("/api/naver-news", { cache: "no-store" });
+    const data = (await res.json()) as NewsApiResponse;
+    setResult(data);
+  }, []);
 
   useEffect(() => {
     let ignore = false;
-    // 새로고침 버튼/최초 로드 시 로딩 상태를 보여주기 위한 표준 fetch-on-change 패턴입니다.
+    // 최초 로드/전체 업데이트 시 로딩 상태를 보여주기 위한 표준 fetch-on-change 패턴입니다.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
 
     (async () => {
       try {
-        const res = await fetch("/api/naver-news", { cache: "no-store" });
-        const data = (await res.json()) as NaverNewsResult;
-        if (!ignore) setResult(data);
-      } catch {
-        if (!ignore) setResult({ groups: [], fetchedAt: new Date().toISOString() });
+        await loadStored();
+      } catch (err) {
+        console.error("[NewsSection] 저장된 뉴스 데이터를 불러오지 못했습니다:", err);
+        if (!ignore) setResult({ status: "empty" });
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -90,9 +105,23 @@ export default function NewsSection({ refreshSignal = 0 }: { refreshSignal?: num
     return () => {
       ignore = true;
     };
-  }, [reloadToken, refreshSignal]);
+  }, [refreshSignal, loadStored]);
 
-  const allFailed = result != null && result.groups.length > 0 && result.groups.every((g) => g.status === "error");
+  // 저장된 데이터를 다시 읽는 게 아니라, 실제로 네이버를 다시 크롤링하고 저장한 뒤 읽어옵니다.
+  const handleCrawlNow = useCallback(async () => {
+    setCrawling(true);
+    try {
+      await fetch("/api/refresh", { method: "POST", cache: "no-store" });
+      await loadStored();
+    } catch (err) {
+      console.error("[NewsSection] 새로고침 실패:", err);
+    } finally {
+      setCrawling(false);
+    }
+  }, [loadStored]);
+
+  const allFailed =
+    result?.status === "ok" && result.data.groups.length > 0 && result.data.groups.every((g) => g.status === "error");
 
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900">
@@ -102,23 +131,25 @@ export default function NewsSection({ refreshSignal = 0 }: { refreshSignal?: num
           <p className="text-xs text-neutral-400 dark:text-neutral-500">한복 · 전통의상 · 궁중문화 최신 검색 결과</p>
         </div>
         <div className="flex items-center gap-2">
-          {result && (
+          {result?.status === "ok" && (
             <span className="text-xs text-neutral-400 dark:text-neutral-500">
-              업데이트: {new Date(result.fetchedAt).toLocaleString("ko-KR")}
+              업데이트: {new Date(result.data.fetchedAt).toLocaleString("ko-KR")}
             </span>
           )}
           <button
             type="button"
-            onClick={() => setReloadToken((t) => t + 1)}
-            disabled={loading}
+            onClick={handleCrawlNow}
+            disabled={loading || crawling}
             className="rounded-md border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
           >
-            {loading ? "불러오는 중..." : "새로고침"}
+            {crawling ? "크롤링 중..." : "새로고침"}
           </button>
         </div>
       </div>
 
       {loading && <SkeletonState />}
+
+      {!loading && result?.status === "empty" && <EmptyState />}
 
       {!loading && allFailed && (
         <p className="mb-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-3 text-xs text-red-700 dark:border-red-800/60 dark:bg-red-950/30 dark:text-red-300">
@@ -126,9 +157,9 @@ export default function NewsSection({ refreshSignal = 0 }: { refreshSignal?: num
         </p>
       )}
 
-      {!loading && result && (
+      {!loading && result?.status === "ok" && (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          {result.groups.map((group) => (
+          {result.data.groups.map((group) => (
             <KeywordGroupCard key={group.keyword} group={group} />
           ))}
         </div>

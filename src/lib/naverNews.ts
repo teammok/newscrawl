@@ -2,8 +2,13 @@
 // 공식 API가 아닌 검색 결과 페이지의 HTML을 파싱하므로, 네이버가 마크업을 바꾸면
 // 셀렉터가 깨질 수 있습니다. 그래서 실패해도 앱이 죽지 않고 각 키워드별로
 // "가져오기 실패" 상태만 표시되도록 방어적으로 작성했습니다.
+//
+// 크롤링 자체는 /api/refresh(수동 버튼)와 /api/cron/refresh(Vercel Cron)에서만 실행되고,
+// 결과는 lib/storage.ts를 통해 Vercel Blob(또는 로컬 dev에서는 파일)에 저장됩니다.
+// 방문자가 페이지를 열 때마다 네이버에 요청을 보내지 않기 위함입니다.
 
 import * as cheerio from "cheerio";
+import iconv from "iconv-lite";
 
 // 여기 배열만 수정하면 검색 키워드를 쉽게 추가/삭제/교체할 수 있습니다.
 export const NEWS_KEYWORDS = ["한복", "전통의상", "궁중문화"] as const;
@@ -12,12 +17,6 @@ const SEARCH_URL = "https://search.naver.com/search.naver";
 const MAX_ARTICLES_PER_KEYWORD = 6;
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
-
-// 방문할 때마다 네이버에 크롤링 요청을 보내지 않도록 Next.js Data Cache에 태그를 걸어
-// 6시간마다 자동 갱신하고, /api/refresh(수동 버튼)나 Vercel Cron이 이 태그를
-// revalidateTag로 무효화하면 다음 요청에서 즉시 새로 크롤링합니다.
-export const NEWS_CACHE_TAG = "naver-news";
-const REVALIDATE_SECONDS = 60 * 60 * 6;
 
 export interface NewsArticle {
   title: string;
@@ -37,6 +36,33 @@ export interface NewsKeywordGroup {
 export interface NaverNewsResult {
   groups: NewsKeywordGroup[];
   fetchedAt: string;
+}
+
+/**
+ * 응답 본문을 올바른 인코딩으로 디코딩합니다.
+ * 네이버 페이지 중에는 여전히 EUC-KR(CP949)로 서비스되는 것들이 있어(예: 뉴스 랭킹 페이지),
+ * 무조건 UTF-8로 읽으면 한글이 깨집니다. Content-Type 헤더 → HTML <meta charset> 순으로
+ * 확인해서 필요할 때만 iconv-lite로 변환합니다.
+ */
+async function decodeHtml(res: Response): Promise<string> {
+  const buffer = Buffer.from(await res.arrayBuffer());
+
+  const headerCharset = res.headers.get("content-type")?.match(/charset=([^;]+)/i)?.[1];
+  // 아직 인코딩을 모르는 상태이므로, ASCII 범위인 <meta charset> 태그만 우선 latin1로 스캔
+  const head = buffer.subarray(0, 2048).toString("latin1");
+  const metaCharset = head.match(/<meta[^>]+charset=["']?([\w-]+)/i)?.[1];
+  const charset = (headerCharset || metaCharset || "utf-8").toLowerCase().trim();
+
+  if (charset.includes("utf-8") || charset.includes("utf8")) {
+    return buffer.toString("utf-8");
+  }
+
+  try {
+    return iconv.decode(buffer, charset);
+  } catch (err) {
+    console.error(`[naverNews] 알 수 없는 인코딩 "${charset}", UTF-8로 대체 시도:`, err);
+    return buffer.toString("utf-8");
+  }
 }
 
 function parseArticles(html: string): NewsArticle[] {
@@ -74,7 +100,7 @@ async function fetchKeywordNews(keyword: string): Promise<NewsKeywordGroup> {
   try {
     res = await fetch(url, {
       headers: { "User-Agent": USER_AGENT },
-      next: { revalidate: REVALIDATE_SECONDS, tags: [NEWS_CACHE_TAG] },
+      cache: "no-store",
     });
   } catch (err) {
     console.error(`[naverNews] "${keyword}" 요청 자체가 실패했습니다 (네트워크/DNS 등):`, err);
@@ -97,7 +123,7 @@ async function fetchKeywordNews(keyword: string): Promise<NewsKeywordGroup> {
   }
 
   try {
-    const html = await res.text();
+    const html = await decodeHtml(res);
     const articles = parseArticles(html);
     return { keyword, status: "ok", articles };
   } catch (err) {
@@ -111,7 +137,8 @@ async function fetchKeywordNews(keyword: string): Promise<NewsKeywordGroup> {
   }
 }
 
-export async function fetchAllNaverNews(): Promise<NaverNewsResult> {
+/** 네이버에서 실제로 크롤링을 수행합니다. cron/수동 새로고침에서만 호출하세요. */
+export async function crawlNaverNews(): Promise<NaverNewsResult> {
   const groups = await Promise.all(NEWS_KEYWORDS.map((keyword) => fetchKeywordNews(keyword)));
   return { groups, fetchedAt: new Date().toISOString() };
 }

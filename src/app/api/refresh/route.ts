@@ -1,13 +1,33 @@
-import { revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
-import { NEWS_CACHE_TAG } from "@/lib/naverNews";
+import { crawlNaverNews } from "@/lib/naverNews";
+import { getNewsData, saveNewsData } from "@/lib/storage";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 // 대시보드의 "전체 업데이트" 버튼이 호출하는 엔드포인트.
-// 뉴스 크롤링 캐시를 무효화해서 다음 조회 시 네이버에서 즉시 새로 가져오게 합니다.
-// (검색어 트렌드는 캐싱하지 않고 항상 라이브로 조회하므로 여기서 할 일이 없습니다.)
+// 짧은 시간에 여러 번 눌러도 네이버에 반복 요청을 보내지 않도록 최소 간격을 둔다.
+const COOLDOWN_MS = 60_000;
+
 export async function POST() {
-  // { expire: 0 }: 사용자가 버튼을 눌렀을 때 다음 요청에서 바로 새 데이터를 받도록
-  // 즉시 만료시킵니다("max" 프로필의 stale-while-revalidate는 여기서 원하는 동작이 아닙니다).
-  revalidateTag(NEWS_CACHE_TAG, { expire: 0 });
-  return NextResponse.json({ ok: true, revalidatedAt: new Date().toISOString() });
+  const existing = await getNewsData();
+
+  if (existing) {
+    const elapsedMs = Date.now() - new Date(existing.fetchedAt).getTime();
+    if (elapsedMs < COOLDOWN_MS) {
+      return NextResponse.json({ ok: true, throttled: true, fetchedAt: existing.fetchedAt });
+    }
+  }
+
+  try {
+    const data = await crawlNaverNews();
+    await saveNewsData(data);
+    return NextResponse.json({ ok: true, throttled: false, fetchedAt: data.fetchedAt });
+  } catch (err) {
+    console.error("[api/refresh] 뉴스 크롤링/저장 실패:", err);
+    return NextResponse.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
+  }
 }
